@@ -71,6 +71,50 @@ if not unfinished:
 # =====================
 st.title("🐱 ねこスケジュール")
 
+# =====================
+# タスク入力フォーム
+# =====================
+st.subheader("➕ タスクを追加")
+
+with st.form("add_task_form"):
+    title = st.text_input("タスク名")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        deadline_date = st.date_input("期限（日付）")
+        start_time = st.time_input("開始目安時刻", time(19, 0))
+
+    with col2:
+        deadline_time = st.time_input("期限（時間）", time(23, 59))
+        planned_minutes = st.number_input(
+            "予定作業時間（分）",
+            min_value=5,
+            step=5,
+            value=30
+        )
+
+    submitted = st.form_submit_button("追加する")
+
+    if submitted:
+        if title == "":
+            st.warning("タスク名を入力してね")
+        else:
+            deadline = datetime.combine(deadline_date, deadline_time)
+
+            st.session_state.tasks.append(
+                {
+                    "title": title,
+                    "start_time": start_time,
+                    "planned_minutes": planned_minutes,
+                    "deadline": deadline,
+                    "done": False,
+                    "log": []
+                }
+            )
+            st.success("タスクを追加したにゃ 🐾")
+            st.rerun()
+
+
 # -------- 夜通知（最優先） --------
 if NIGHT_START <= current_hour <= NIGHT_END and current_task:
     with st.container():
