@@ -7,16 +7,7 @@ st.set_page_config(page_title="ねこスケジュール", layout="centered")
 # 初期化
 # =====================
 if "tasks" not in st.session_state:
-    st.session_state.tasks = [
-        {
-            "title": "レポート①",
-            "start_time": time(19, 0),
-            "planned_minutes": 30,
-            "deadline": datetime.now() + timedelta(hours=1),
-            "done": False,
-            "log": []
-        }
-    ]
+    st.session_state.tasks = []
 
 if "points" not in st.session_state:
     st.session_state.points = 100
@@ -24,6 +15,9 @@ if "points" not in st.session_state:
 if "happy_streak" not in st.session_state:
     st.session_state.happy_streak = 0
     st.session_state.last_happy_day = None
+
+if "last_added_task" not in st.session_state:
+    st.session_state.last_added_task = None
 
 # =====================
 # 時刻
@@ -37,42 +31,12 @@ NIGHT_START = 19
 NIGHT_END = 22
 
 # =====================
-# タスク分類
-# =====================
-unfinished = [t for t in st.session_state.tasks if not t["done"]]
-overdue = [t for t in unfinished if t["deadline"] < now]
-active = [t for t in unfinished if t["deadline"] >= now]
-
-current_task = active[0] if active else None
-
-# =====================
-# ねこ表情判定
-# =====================
-cat_face = "😼"
-message = "今日は何をやるにゃ？"
-
-if overdue:
-    cat_face = "😰"
-    message = "期限を過ぎた課題があるにゃ…"
-
-if current_task and current_time > current_task["start_time"]:
-    cat_face = "😰"
-    message = "そろそろ始めたいにゃ"
-
-if not unfinished:
-    cat_face = "😺"
-    message = "全部終わったにゃ！"
-    if st.session_state.last_happy_day != today:
-        st.session_state.happy_streak += 1
-        st.session_state.last_happy_day = today
-
-# =====================
-# UI
+# タイトル
 # =====================
 st.title("🐱 ねこスケジュール")
 
 # =====================
-# タスク入力フォーム
+# タスク追加フォーム
 # =====================
 st.subheader("➕ タスクを追加")
 
@@ -87,10 +51,7 @@ with st.form("add_task_form"):
     with col2:
         deadline_time = st.time_input("期限（時間）", time(23, 59))
         planned_minutes = st.number_input(
-            "予定作業時間（分）",
-            min_value=5,
-            step=5,
-            value=30
+            "予定作業時間（分）", min_value=5, step=5, value=30
         )
 
     submitted = st.form_submit_button("追加する")
@@ -111,11 +72,46 @@ with st.form("add_task_form"):
                     "log": []
                 }
             )
+            st.session_state.last_added_task = title
             st.success("タスクを追加したにゃ 🐾")
             st.rerun()
 
+# =====================
+# タスク分類
+# =====================
+unfinished = [t for t in st.session_state.tasks if not t["done"]]
+overdue = [t for t in unfinished if t["deadline"] < now]
+active = [t for t in unfinished if t["deadline"] >= now]
 
-# -------- 夜通知（最優先） --------
+current_task = active[0] if active else None
+
+# =====================
+# ねこ表情 & メッセージ
+# =====================
+cat_face = "😼"
+message = "今日は何をやるにゃ？"
+
+if st.session_state.last_added_task:
+    message = f"「{st.session_state.last_added_task}」を追加したにゃ！"
+
+if overdue:
+    cat_face = "😰"
+    message = "期限を過ぎた課題があるにゃ…"
+
+if current_task and current_time > current_task["start_time"]:
+    cat_face = "😰"
+    message = "そろそろ始めたいにゃ"
+
+if not unfinished and st.session_state.tasks:
+    cat_face = "😺"
+    message = "全部終わったにゃ！"
+    if st.session_state.last_happy_day != today:
+        st.session_state.happy_streak += 1
+        st.session_state.last_happy_day = today
+
+# =====================
+# 夜の通知UI（最優先）
+# =====================
 if NIGHT_START <= current_hour <= NIGHT_END and current_task:
     with st.container():
         st.markdown(
@@ -159,26 +155,51 @@ if NIGHT_START <= current_hour <= NIGHT_END and current_task:
 
                 current_task["done"] = True
                 st.success("お疲れさま！")
+                st.rerun()
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-# -------- 期限超過 --------
-if overdue:
-    st.divider()
-    st.subheader("⚠️ 期限を過ぎたタスク")
+# =====================
+# タスク一覧（追加後に分かりやすい）
+# =====================
+st.divider()
+st.subheader("📋 タスク一覧")
 
-    for t in overdue:
-        delay = now - t["deadline"]
-        hours = int(delay.total_seconds() // 3600)
-        st.write(f"😿 **{t['title']}**（{hours}時間遅れ）")
+for t in st.session_state.tasks:
+    if t["done"]:
+        status = "✅"
+    elif t["deadline"] < now:
+        status = "⚠️"
+    else:
+        status = "⏳"
 
-# -------- ステータス --------
+    highlight = ""
+    if t["title"] == st.session_state.last_added_task:
+        highlight = "background-color:#fff3cd; padding:12px; border-radius:12px;"
+
+    st.markdown(
+        f"""
+        <div style="{highlight}">
+        {status} <strong>{t['title']}</strong><br>
+        ⏰ 開始目安：{t['start_time'].strftime('%H:%M')}<br>
+        📅 期限：{t['deadline'].strftime('%m/%d %H:%M')}<br>
+        🧩 予定時間：{t['planned_minutes']}分
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+# =====================
+# ステータス
+# =====================
 st.divider()
 st.subheader("📊 ステータス")
 st.write(f"⭐ ポイント：{st.session_state.points}")
 st.write(f"😺 ニコニコ連続日数：{st.session_state.happy_streak}")
 
-# -------- 実績ログ --------
+# =====================
+# 実績ログ
+# =====================
 st.subheader("📝 実績ログ")
 
 for t in st.session_state.tasks:
