@@ -23,10 +23,7 @@ def load_data():
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             try:
                 data = json.load(f)
-                if isinstance(data, list):
-                    st.session_state.tasks = data
-                else:
-                    st.session_state.tasks = []
+                st.session_state.tasks = data if isinstance(data, list) else []
             except:
                 st.session_state.tasks = []
 
@@ -35,20 +32,14 @@ def load_data():
 # =====================
 def predict_minutes(title, planned):
     logs = []
-
     for t in st.session_state.tasks:
         if not isinstance(t, dict):
             continue
-
         if t.get("title") == title:
             for log in t.get("log", []):
                 if isinstance(log, dict) and "minutes" in log:
                     logs.append(log["minutes"])
-
-    if len(logs) >= 3:
-        return int(np.mean(logs))
-    else:
-        return int(planned * 1.2)
+    return int(np.mean(logs)) if len(logs) >= 3 else int(planned * 1.2)
 
 # =====================
 # 初期化
@@ -57,9 +48,6 @@ if "tasks" not in st.session_state:
     st.session_state.tasks = []
     load_data()
 
-# =====================
-# 時刻
-# =====================
 now = datetime.now()
 today = date.today()
 
@@ -96,6 +84,8 @@ with st.form("add_task"):
             "predicted": predicted,
             "deadline": datetime.combine(deadline_date, deadline_time).isoformat(),
             "done": False,
+            "working": False,
+            "start_at": None,
             "log": []
         })
 
@@ -130,12 +120,14 @@ for i, t in enumerate(st.session_state.tasks):
 
     if t.get("done"):
         status = "✅"
+    elif t.get("working"):
+        status = "🐱‍💻"
     elif deadline < now:
         status = "🔥"
     else:
         status = "⏳"
 
-    col1, col2 = st.columns([5, 1])
+    col1, col2 = st.columns([5, 2])
 
     with col1:
         st.markdown(
@@ -151,6 +143,39 @@ for i, t in enumerate(st.session_state.tasks):
         )
 
     with col2:
+        # 開始
+        if not t.get("done") and not t.get("working"):
+            if st.button("▶️", key=f"start_{i}"):
+                t["working"] = True
+                t["start_at"] = datetime.now().isoformat()
+                save_data()
+                st.rerun()
+
+        # 停止
+        if t.get("working"):
+            if st.button("⏸", key=f"stop_{i}"):
+                start = datetime.fromisoformat(t["start_at"])
+                minutes = max(int((datetime.now() - start).total_seconds() // 60), 1)
+
+                t["working"] = False
+                t["start_at"] = None
+                t["log"].append({
+                    "time": datetime.now().isoformat(),
+                    "minutes": minutes
+                })
+
+                save_data()
+                st.success(f"{minutes}分 作業したにゃ 🐾")
+                st.rerun()
+
+        # 完了
+        if not t.get("done"):
+            if st.button("✅", key=f"done_{i}"):
+                t["done"] = True
+                save_data()
+                st.rerun()
+
+        # 削除
         if st.button("🗑", key=f"del_{i}"):
             st.session_state.tasks.pop(i)
             save_data()
@@ -168,7 +193,6 @@ calendar = {d.strftime("%m/%d"): [] for d in dates}
 for t in st.session_state.tasks:
     if not isinstance(t, dict):
         continue
-
     try:
         d = datetime.fromisoformat(str(t.get("deadline"))).date()
         if d in dates:
