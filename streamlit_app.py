@@ -1,7 +1,147 @@
 import streamlit as st
+from datetime import datetime, date, time, timedelta
 
-st.title("🎈 My new app")
-st.write(
-    "Let's start building! For help and inspiration, head over to [docs.streamlit.io](https://docs.streamlit.io/)."
-)
-st.write("最初の第一歩")
+st.set_page_config(page_title="ねこスケジュール", layout="centered")
+
+# =====================
+# 初期化
+# =====================
+if "tasks" not in st.session_state:
+    st.session_state.tasks = [
+        {
+            "title": "レポート①",
+            "start_time": time(19, 0),
+            "planned_minutes": 30,
+            "deadline": datetime.now() + timedelta(hours=1),
+            "done": False,
+            "log": []
+        }
+    ]
+
+if "points" not in st.session_state:
+    st.session_state.points = 100
+
+if "happy_streak" not in st.session_state:
+    st.session_state.happy_streak = 0
+    st.session_state.last_happy_day = None
+
+# =====================
+# 時刻
+# =====================
+now = datetime.now()
+today = date.today()
+current_time = now.time()
+current_hour = now.hour
+
+NIGHT_START = 19
+NIGHT_END = 22
+
+# =====================
+# タスク分類
+# =====================
+unfinished = [t for t in st.session_state.tasks if not t["done"]]
+overdue = [t for t in unfinished if t["deadline"] < now]
+active = [t for t in unfinished if t["deadline"] >= now]
+
+current_task = active[0] if active else None
+
+# =====================
+# ねこ表情判定
+# =====================
+cat_face = "😼"
+message = "今日は何をやるにゃ？"
+
+if overdue:
+    cat_face = "😰"
+    message = "期限を過ぎた課題があるにゃ…"
+
+if current_task and current_time > current_task["start_time"]:
+    cat_face = "😰"
+    message = "そろそろ始めたいにゃ"
+
+if not unfinished:
+    cat_face = "😺"
+    message = "全部終わったにゃ！"
+    if st.session_state.last_happy_day != today:
+        st.session_state.happy_streak += 1
+        st.session_state.last_happy_day = today
+
+# =====================
+# UI
+# =====================
+st.title("🐱 ねこスケジュール")
+
+# -------- 夜通知（最優先） --------
+if NIGHT_START <= current_hour <= NIGHT_END and current_task:
+    with st.container():
+        st.markdown(
+            """
+            <div style="
+                background:#f4f4f4;
+                padding:20px;
+                border-radius:18px;
+                box-shadow:0 4px 8px rgba(0,0,0,0.08);
+            ">
+            """,
+            unsafe_allow_html=True
+        )
+
+        st.markdown(f"### 🌙 ねこからの通知 {cat_face}")
+        st.write(message)
+
+        st.write(
+            f"**今やるタスク**：{current_task['title']}  \n"
+            f"⏰ 開始目安：{current_task['start_time'].strftime('%H:%M')}  \n"
+            f"🧩 予定時間：{current_task['planned_minutes']}分"
+        )
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            if st.button("▶ 今からやる"):
+                current_task["log"].append({"start": datetime.now()})
+                st.success("作業スタート！")
+
+        with col2:
+            if st.button("☑ 終わった"):
+                end = datetime.now()
+                log = current_task["log"][-1]
+                log["end"] = end
+                spent = int((end - log["start"]).total_seconds() / 60)
+                log["minutes"] = spent
+
+                if spent > current_task["planned_minutes"]:
+                    st.session_state.points -= 10
+
+                current_task["done"] = True
+                st.success("お疲れさま！")
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+# -------- 期限超過 --------
+if overdue:
+    st.divider()
+    st.subheader("⚠️ 期限を過ぎたタスク")
+
+    for t in overdue:
+        delay = now - t["deadline"]
+        hours = int(delay.total_seconds() // 3600)
+        st.write(f"😿 **{t['title']}**（{hours}時間遅れ）")
+
+# -------- ステータス --------
+st.divider()
+st.subheader("📊 ステータス")
+st.write(f"⭐ ポイント：{st.session_state.points}")
+st.write(f"😺 ニコニコ連続日数：{st.session_state.happy_streak}")
+
+# -------- 実績ログ --------
+st.subheader("📝 実績ログ")
+
+for t in st.session_state.tasks:
+    st.write(f"### {t['title']}")
+    for log in t["log"]:
+        if "end" in log:
+            st.write(
+                f"- {log['start'].strftime('%H:%M')}〜"
+                f"{log['end'].strftime('%H:%M')}（{log['minutes']}分）"
+            )
