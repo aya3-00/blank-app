@@ -9,7 +9,6 @@ import numpy as np
 # 基本設定
 # =====================
 st.set_page_config(page_title="ねこスケジュール", layout="centered")
-
 DATA_FILE = "tasks.json"
 
 # =====================
@@ -23,7 +22,11 @@ def load_data():
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             try:
-                st.session_state.tasks = json.load(f)
+                data = json.load(f)
+                if isinstance(data, list):
+                    st.session_state.tasks = data
+                else:
+                    st.session_state.tasks = []
             except:
                 st.session_state.tasks = []
 
@@ -34,9 +37,12 @@ def predict_minutes(title, planned):
     logs = []
 
     for t in st.session_state.tasks:
+        if not isinstance(t, dict):
+            continue
+
         if t.get("title") == title:
             for log in t.get("log", []):
-                if "minutes" in log:
+                if isinstance(log, dict) and "minutes" in log:
                     logs.append(log["minutes"])
 
     if len(logs) >= 3:
@@ -52,7 +58,7 @@ if "tasks" not in st.session_state:
     load_data()
 
 # =====================
-# 現在時刻
+# 時刻
 # =====================
 now = datetime.now()
 today = date.today()
@@ -82,20 +88,17 @@ with st.form("add_task"):
     if st.form_submit_button("追加する") and title:
         predicted = predict_minutes(title, planned)
 
-        st.session_state.tasks.append(
-            {
-                "id": datetime.now().timestamp(),
-                "title": title,
-                "start_time": start_time.strftime("%H:%M"),
-                "planned": planned,
-                "predicted": predicted,
-                "deadline": datetime.combine(
-                    deadline_date, deadline_time
-                ).isoformat(),
-                "done": False,
-                "log": []
-            }
-        )
+        st.session_state.tasks.append({
+            "id": datetime.now().timestamp(),
+            "title": title,
+            "start_time": start_time.strftime("%H:%M"),
+            "planned": planned,
+            "predicted": predicted,
+            "deadline": datetime.combine(deadline_date, deadline_time).isoformat(),
+            "done": False,
+            "log": []
+        })
+
         save_data()
         st.success(f"🧠 AI予測：{predicted}分くらいにゃ！")
         st.rerun()
@@ -110,6 +113,9 @@ if not st.session_state.tasks:
     st.info("まだタスクがないにゃ 🐾")
 
 for i, t in enumerate(st.session_state.tasks):
+    if not isinstance(t, dict):
+        continue
+
     try:
         deadline = datetime.fromisoformat(str(t.get("deadline")))
     except:
@@ -151,7 +157,7 @@ for i, t in enumerate(st.session_state.tasks):
             st.rerun()
 
 # =====================
-# カレンダー表示
+# カレンダー
 # =====================
 st.divider()
 st.subheader("📅 1週間カレンダー")
@@ -160,6 +166,9 @@ dates = [today + timedelta(days=i) for i in range(7)]
 calendar = {d.strftime("%m/%d"): [] for d in dates}
 
 for t in st.session_state.tasks:
+    if not isinstance(t, dict):
+        continue
+
     try:
         d = datetime.fromisoformat(str(t.get("deadline"))).date()
         if d in dates:
@@ -167,8 +176,5 @@ for t in st.session_state.tasks:
     except:
         pass
 
-df = pd.DataFrame(
-    {day: [" / ".join(tasks)] for day, tasks in calendar.items()}
-)
-
+df = pd.DataFrame({day: [" / ".join(tasks)] for day, tasks in calendar.items()})
 st.dataframe(df, use_container_width=True)
