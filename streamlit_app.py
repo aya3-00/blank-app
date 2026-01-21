@@ -5,6 +5,9 @@ import os
 import pandas as pd
 import numpy as np
 
+# =====================
+# 基本設定
+# =====================
 st.set_page_config(page_title="ねこスケジュール", layout="centered")
 
 DATA_FILE = "tasks.json"
@@ -19,7 +22,10 @@ def save_data():
 def load_data():
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r", encoding="utf-8") as f:
-            st.session_state.tasks = json.load(f)
+            try:
+                st.session_state.tasks = json.load(f)
+            except:
+                st.session_state.tasks = []
 
 # =====================
 # AI作業時間予測
@@ -28,15 +34,15 @@ def predict_minutes(title, planned):
     logs = []
 
     for t in st.session_state.tasks:
-        if t["title"] == title:
-            for log in t["log"]:
+        if t.get("title") == title:
+            for log in t.get("log", []):
                 if "minutes" in log:
                     logs.append(log["minutes"])
 
     if len(logs) >= 3:
         return int(np.mean(logs))
     else:
-        return int(planned * 1.2)  # 実績が少ない時は少し長め
+        return int(planned * 1.2)
 
 # =====================
 # 初期化
@@ -46,11 +52,10 @@ if "tasks" not in st.session_state:
     load_data()
 
 # =====================
-# 時刻
+# 現在時刻
 # =====================
 now = datetime.now()
 today = date.today()
-current_hour = now.hour
 
 # =====================
 # タイトル
@@ -67,7 +72,7 @@ with st.form("add_task"):
 
     col1, col2 = st.columns(2)
     with col1:
-        deadline_date = st.date_input("期限（日付）")
+        deadline_date = st.date_input("期限（日付）", today)
         start_time = st.time_input("開始目安", time(19, 0))
 
     with col2:
@@ -84,13 +89,15 @@ with st.form("add_task"):
                 "start_time": start_time.strftime("%H:%M"),
                 "planned": planned,
                 "predicted": predicted,
-                "deadline": datetime.combine(deadline_date, deadline_time).isoformat(),
+                "deadline": datetime.combine(
+                    deadline_date, deadline_time
+                ).isoformat(),
                 "done": False,
                 "log": []
             }
         )
         save_data()
-        st.success(f"AI予測：{predicted}分かかりそうにゃ 🧠")
+        st.success(f"🧠 AI予測：{predicted}分くらいにゃ！")
         st.rerun()
 
 # =====================
@@ -99,44 +106,69 @@ with st.form("add_task"):
 st.divider()
 st.subheader("📋 タスク一覧")
 
-for t in st.session_state.tasks:
-    deadline = datetime.fromisoformat(t["deadline"])
-    status = "✅" if t["done"] else "⚠️" if deadline < now else "⏳"
+if not st.session_state.tasks:
+    st.info("まだタスクがないにゃ 🐾")
 
-    start_dt = datetime.combine(today, datetime.strptime(t["start_time"], "%H:%M").time())
-    remaining = int((start_dt - now).total_seconds() // 60)
+for i, t in enumerate(st.session_state.tasks):
+    try:
+        deadline = datetime.fromisoformat(str(t.get("deadline")))
+    except:
+        continue
 
-    st.markdown(
-        f"""
-        <div style="background:#f4f4f4;padding:12px;border-radius:12px">
-        {status} <b>{t['title']}</b><br>
-        ⏰ 開始目安：{t['start_time']}（あと {remaining} 分）<br>
-        🧠 AI予測：{t['predicted']}分 / 🧩 予定：{t['planned']}分<br>
-        📅 期限：{deadline.strftime('%m/%d %H:%M')}
-        </div>
-        """,
-        unsafe_allow_html=True
+    start_dt = datetime.combine(
+        today,
+        datetime.strptime(t.get("start_time", "00:00"), "%H:%M").time()
     )
 
+    remaining = int((start_dt - now).total_seconds() // 60)
+
+    if t.get("done"):
+        status = "✅"
+    elif deadline < now:
+        status = "🔥"
+    else:
+        status = "⏳"
+
+    col1, col2 = st.columns([5, 1])
+
+    with col1:
+        st.markdown(
+            f"""
+            <div style="background:#f4f4f4;padding:12px;border-radius:12px">
+            {status} <b>{t['title']}</b><br>
+            ⏰ 開始目安：{t['start_time']}（あと {remaining} 分）<br>
+            🧠 AI予測：{t['predicted']}分 / 🧩 予定：{t['planned']}分<br>
+            📅 期限：{deadline.strftime('%m/%d %H:%M')}
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    with col2:
+        if st.button("🗑", key=f"del_{i}"):
+            st.session_state.tasks.pop(i)
+            save_data()
+            st.rerun()
+
 # =====================
-# カレンダー表示（1週間）
+# カレンダー表示
 # =====================
 st.divider()
-st.subheader("📅 週間カレンダー")
+st.subheader("📅 1週間カレンダー")
 
 dates = [today + timedelta(days=i) for i in range(7)]
 calendar = {d.strftime("%m/%d"): [] for d in dates}
 
 for t in st.session_state.tasks:
-    d = datetime.fromisoformat(t["deadline"]).date()
-    if d in dates:
-        calendar[d.strftime("%m/%d")].append(t["title"])
+    try:
+        d = datetime.fromisoformat(str(t.get("deadline"))).date()
+        if d in dates:
+            calendar[d.strftime("%m/%d")].append(t["title"])
+    except:
+        pass
 
 df = pd.DataFrame(
-    {
-        day: [" / ".join(tasks) if tasks else ""]
-        for day, tasks in calendar.items()
-    }
+    {day: [" / ".join(tasks)] for day, tasks in calendar.items()}
 )
 
 st.dataframe(df, use_container_width=True)
